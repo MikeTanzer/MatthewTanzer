@@ -3,13 +3,42 @@
 Real estate site for Matthew Tanzer, REALTOR® (Coldwell Banker Realty, Monterey Peninsula).
 Next.js 16 · React 19 · Tailwind CSS v4 · TypeScript.
 
+**Live:** https://miketanzer.github.io/MatthewTanzer/
+
 ## Pages
 
 - `/` — hero, featured listings, area overview
 - `/listings` — all active listings with city filter + price sort
 - `/listings/[id]` — photo gallery, facts, description, virtual tour, inquiry form
 - `/guides` + `/guides/[slug]` — homebuyer guides & resources (5 long-form guides)
-- `/contact` — contact form (posts to `/api/contact`, stored in `data/inquiries.jsonl`)
+- `/contact` — contact form
+
+## Deployment
+
+```bash
+npm run deploy:pages
+```
+
+Builds the static export and publishes `out/` to the `gh-pages` branch, which GitHub
+Pages serves at https://miketanzer.github.io/MatthewTanzer/. Re-run it after
+`npm run sync-listings` to push fresh listings live.
+
+`GITHUB_PAGES=true` (set by that script) switches on `output: 'export'`, the
+`/MatthewTanzer` base path, and unoptimized images (Pages has no image optimizer);
+`next dev` is unaffected and stays at the root.
+
+**Automating it:** deploys are manual because the local `gh` OAuth token lacks the
+`workflow` scope and so cannot push `.github/workflows/*`. To switch to deploy-on-push,
+run `gh auth refresh -s workflow`, copy `deploy/github-pages-workflow.yml` to
+`.github/workflows/deploy.yml`, push, and set the Pages source to "GitHub Actions".
+
+### Contact form
+
+Static hosting has no server, so the form composes a prefilled email via `mailto:`
+to matthew.tanzer@cbrealty.com. To capture submissions instead, set
+`NEXT_PUBLIC_FORM_ENDPOINT` to a form service (Formspree et al.) — the form will POST
+JSON to it rather than opening a mail client. On a server host like Vercel, restore a
+`src/app/api/contact/route.ts` handler and point that env var at `/api/contact`.
 
 ## Listings data pipeline
 

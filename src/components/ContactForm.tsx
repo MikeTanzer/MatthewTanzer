@@ -2,6 +2,21 @@
 
 import { useState } from "react";
 
+const RECIPIENT = "matthew.tanzer@cbrealty.com";
+
+// GitHub Pages serves static files only, so there is no server to POST to.
+// The form composes a prefilled email in the visitor's mail client instead.
+// To capture submissions server-side, set NEXT_PUBLIC_FORM_ENDPOINT to a form
+// service (Formspree et al.) or a serverless route and redeploy.
+const ENDPOINT = process.env.NEXT_PUBLIC_FORM_ENDPOINT;
+
+const INTEREST_LABELS: Record<string, string> = {
+  buying: "Looking to buy",
+  selling: "Thinking of selling",
+  both: "Buying and selling",
+  question: "General question",
+};
+
 export default function ContactForm({
   compact = false,
   defaultMessage = "",
@@ -9,37 +24,74 @@ export default function ContactForm({
   compact?: boolean;
   defaultMessage?: string;
 }) {
-  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "mailto" | "error">("idle");
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setStatus("sending");
     const form = e.currentTarget;
-    const body = Object.fromEntries(new FormData(form).entries());
-    try {
-      const res = await fetch("/api/contact", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error(String(res.status));
-      setStatus("sent");
-      form.reset();
-    } catch {
-      setStatus("error");
+    const data = Object.fromEntries(new FormData(form).entries()) as Record<string, string>;
+
+    if (ENDPOINT) {
+      setStatus("sending");
+      try {
+        const res = await fetch(ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify(data),
+        });
+        if (!res.ok) throw new Error(String(res.status));
+        setStatus("sent");
+        form.reset();
+      } catch {
+        setStatus("error");
+      }
+      return;
     }
+
+    const subject = data.interest
+      ? `Website inquiry — ${INTEREST_LABELS[data.interest] ?? data.interest}`
+      : "Website inquiry";
+    const body = [
+      `Name: ${data.name}`,
+      `Email: ${data.email}`,
+      data.phone ? `Phone: ${data.phone}` : null,
+      "",
+      data.message,
+    ]
+      .filter((l) => l !== null)
+      .join("\n");
+
+    window.location.href = `mailto:${RECIPIENT}?subject=${encodeURIComponent(
+      subject
+    )}&body=${encodeURIComponent(body)}`;
+    setStatus("mailto");
   }
 
   const inputCls =
     "w-full rounded-sm border border-gold-500/25 bg-navy-950 px-4 py-3 text-sm text-cream placeholder:text-cream/35 focus:border-gold-400 focus:outline-none";
 
-  if (status === "sent") {
+  if (status === "sent" || status === "mailto") {
     return (
       <div className="rounded-sm border border-gold-500/30 bg-navy-950 p-6 text-center">
         <div className="font-display text-2xl text-gold-300">Thank you.</div>
-        <p className="mt-2 text-sm text-cream/70">
-          Your message is on its way — Matthew will reach out shortly.
-        </p>
+        {status === "sent" ? (
+          <p className="mt-2 text-sm text-cream/70">
+            Your message is on its way — Matthew will reach out shortly.
+          </p>
+        ) : (
+          <p className="mt-2 text-sm text-cream/70">
+            Your email app should be open with the message ready — just hit send. If it didn&apos;t
+            open, email{" "}
+            <a href={`mailto:${RECIPIENT}`} className="text-gold-300 underline">
+              {RECIPIENT}
+            </a>{" "}
+            or call{" "}
+            <a href="tel:+18312209817" className="text-gold-300 underline">
+              (831) 220-9817
+            </a>
+            .
+          </p>
+        )}
       </div>
     );
   }
@@ -83,7 +135,7 @@ export default function ContactForm({
       </button>
       {status === "error" && (
         <p className="text-sm text-red-400">
-          Something went wrong. Please call (831) 220-9817 or email matthew.tanzer@cbrealty.com.
+          Something went wrong. Please call (831) 220-9817 or email {RECIPIENT}.
         </p>
       )}
     </form>
