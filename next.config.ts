@@ -14,6 +14,9 @@ const nextConfig: NextConfig = {
       }
     : {}),
   trailingSlash: true,
+  // Leaflet popups build links as raw HTML strings, which Next cannot rewrite
+  // with basePath the way it does for <Link>. Expose it so they can prefix it.
+  env: { NEXT_PUBLIC_BASE_PATH: isPages ? "/MatthewTanzer" : "" },
   images: {
     // Pages has no image optimizer, so listing photos load straight from Moxi.
     unoptimized: isPages,

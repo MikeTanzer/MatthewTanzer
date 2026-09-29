@@ -1,0 +1,146 @@
+{
+ "source": "OpenStreetMap via Overpass API",
+ "fetched": "2026-09-29",
+ "courses": [
+  {
+   "name": "Bayonet Golf Course",
+   "lat": 36.6322857,
+   "lng": -121.8211228,
+   "access": null,
+   "holes": null
+  },
+  {
+   "name": "Black Horse Golf Course",
+   "lat": 36.6275839,
+   "lng": -121.8208528,
+   "access": null,
+   "holes": null
+  },
+  {
+   "name": "Carmel Valley Ranch Golf Course",
+   "lat": 36.5172469,
+   "lng": -121.8006639,
+   "access": null,
+   "holes": null
+  },
+  {
+   "name": "Corral de Tierra Country Club",
+   "lat": 36.5676134,
+   "lng": -121.7275007,
+   "access": null,
+   "holes": null
+  },
+  {
+   "name": "Cypress Point Golf Course",
+   "lat": 36.5788074,
+   "lng": -121.967712,
+   "access": null,
+   "holes": null
+  },
+  {
+   "name": "Del Monte Golf Course",
+   "lat": 36.5855661,
+   "lng": -121.8730585,
+   "access": null,
+   "holes": null
+  },
+  {
+   "name": "Laguna Seca Golf Ranch",
+   "lat": 36.5715084,
+   "lng": -121.7878652,
+   "access": null,
+   "holes": null
+  },
+  {
+   "name": "Monterey Peninsula Country Club - Dunes Course",
+   "lat": 36.6016846,
+   "lng": -121.9477402,
+   "access": null,
+   "holes": null
+  },
+  {
+   "name": "Monterey Peninsula Country Club - Shore Course",
+   "lat": 36.5980261,
+   "lng": -121.9555946,
+   "access": null,
+   "holes": null
+  },
+  {
+   "name": "Monterey Pines Golf Course",
+   "lat": 36.5905457,
+   "lng": -121.8616756,
+   "access": null,
+   "holes": null
+  },
+  {
+   "name": "Pacific Grove Golf Links",
+   "lat": 36.6308638,
+   "lng": -121.9286307,
+   "access": null,
+   "holes": null
+  },
+  {
+   "name": "Pebble Beach Golf Course",
+   "lat": 36.5642591,
+   "lng": -121.9394359,
+   "access": null,
+   "holes": null
+  },
+  {
+   "name": "Poppy Hills Golf Course",
+   "lat": 36.5847987,
+   "lng": -121.9400424,
+   "access": null,
+   "holes": null
+  },
+  {
+   "name": "Quail Lodge Golf Club",
+   "lat": 36.5313569,
+   "lng": -121.8616816,
+   "access": null,
+   "holes": null
+  },
+  {
+   "name": "Spyglass Hill Golf Course",
+   "lat": 36.5850742,
+   "lng": -121.9553205,
+   "access": null,
+   "holes": null
+  },
+  {
+   "name": "Tehama Golf Club",
+   "lat": 36.5603711,
+   "lng": -121.833351,
+   "access": null,
+   "holes": null
+  },
+  {
+   "name": "The Club at Pasadera",
+   "lat": 36.5758213,
+   "lng": -121.7745173,
+   "access": null,
+   "holes": null
+  },
+  {
+   "name": "The Hay",
+   "lat": 36.5718394,
+   "lng": -121.9500942,
+   "access": null,
+   "holes": null
+  },
+  {
+   "name": "The Links at Spanish Bay",
+   "lat": 36.6111944,
+   "lng": -121.9418323,
+   "access": null,
+   "holes": null
+  },
+  {
+   "name": "The Preserve Golf Club Santa Lucia",
+   "lat": 36.4434245,
+   "lng": -121.7867667,
+   "access": "private",
+   "holes": null
+  }
+ ]
+}
