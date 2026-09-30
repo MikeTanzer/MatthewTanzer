@@ -486,7 +486,7 @@ export const LAYERS: MapLayer[] = [
     kind: "polygon",
     color: "#a3e635",
     note: "Working ground. Proximity means spray schedules, dust, equipment noise and night harvesting.",
-    minZoom: 11,
+    minZoom: 9, // renders at the whole-coverage view; truncation is labelled
     sources: [
       { url: `${MC}/Important_Farmlands/FeatureServer/0`, agency: "Monterey County", offset: 0.0001, limit: 2000 },
       { url: `${SC}/Agricultural_Fields/FeatureServer/0`, agency: "Santa Cruz County", offset: 0.0001, limit: 2000 },
@@ -515,27 +515,61 @@ export const DEFAULT_BOUNDS: [[number, number], [number, number]] = [
   [36.645, -121.793],
 ];
 
+/**
+ * The region this map serves: Santa Cruz and Gilroy in the north, down the
+ * Salinas Valley to Soledad and Greenfield, out to Big Sur on the coast.
+ * Listing markers are filtered against these bounds rather than a list of town
+ * names, so a listing in a newly covered town appears without a code change.
+ */
+export const COVERAGE_BOUNDS: [[number, number], [number, number]] = [
+  [36.13, -122.42],
+  [37.06, -121.13],
+];
+
+export type PlaceGroup = "views" | "peninsula" | "santacruz" | "valley";
+
+export const PLACE_GROUPS: { id: PlaceGroup; label: string }[] = [
+  { id: "views", label: "Views" },
+  { id: "peninsula", label: "Monterey Peninsula" },
+  { id: "santacruz", label: "Santa Cruz County" },
+  { id: "valley", label: "Salinas Valley & Inland" },
+];
+
 export interface Place {
   id: string;
   label: string;
+  group: PlaceGroup;
   center?: [number, number];
   zoom?: number;
   bounds?: [[number, number], [number, number]];
 }
 
-/** Places to jump between, spanning both counties. */
+/** Places to jump between across the coverage area. */
 export const PLACES: Place[] = [
-  { id: "peninsula", label: "Monterey Peninsula", bounds: DEFAULT_BOUNDS },
-  { id: "all", label: "Whole Region", center: [36.65, -121.80], zoom: 9 },
-  { id: "monterey", label: "Monterey", center: [36.6002, -121.8947], zoom: 14 },
-  { id: "carmel", label: "Carmel-by-the-Sea", center: [36.5552, -121.9233], zoom: 15 },
-  { id: "pacific-grove", label: "Pacific Grove", center: [36.6177, -121.9166], zoom: 14 },
-  { id: "pebble-beach", label: "Pebble Beach", center: [36.5725, -121.9486], zoom: 14 },
-  { id: "seaside", label: "Seaside", center: [36.6111, -121.8513], zoom: 14 },
-  { id: "carmel-valley", label: "Carmel Valley", center: [36.4819, -121.7314], zoom: 13 },
-  { id: "carmel-highlands", label: "Carmel Highlands", center: [36.4894, -121.9330], zoom: 14 },
-  { id: "big-sur", label: "Big Sur", center: [36.2704, -121.8081], zoom: 12 },
-  { id: "salinas", label: "Salinas", center: [36.6777, -121.6555], zoom: 13 },
-  { id: "watsonville", label: "Watsonville", center: [36.9102, -121.7569], zoom: 13 },
-  { id: "santa-cruz", label: "Santa Cruz", center: [36.9741, -122.0308], zoom: 13 },
+  { id: "peninsula", label: "Monterey Peninsula", group: "views", bounds: DEFAULT_BOUNDS },
+  { id: "all", label: "Whole Coverage Area", group: "views", bounds: COVERAGE_BOUNDS },
+
+  { id: "monterey", label: "Monterey", group: "peninsula", center: [36.6002, -121.8947], zoom: 14 },
+  { id: "carmel", label: "Carmel-by-the-Sea", group: "peninsula", center: [36.5552, -121.9233], zoom: 15 },
+  { id: "pacific-grove", label: "Pacific Grove", group: "peninsula", center: [36.6177, -121.9166], zoom: 14 },
+  { id: "pebble-beach", label: "Pebble Beach", group: "peninsula", center: [36.5725, -121.9486], zoom: 14 },
+  { id: "seaside", label: "Seaside", group: "peninsula", center: [36.6111, -121.8513], zoom: 14 },
+  { id: "marina", label: "Marina", group: "peninsula", center: [36.6844, -121.8022], zoom: 14 },
+  { id: "carmel-valley", label: "Carmel Valley", group: "peninsula", center: [36.4819, -121.7314], zoom: 13 },
+  { id: "carmel-highlands", label: "Carmel Highlands", group: "peninsula", center: [36.4894, -121.9330], zoom: 14 },
+  { id: "big-sur", label: "Big Sur", group: "peninsula", center: [36.2704, -121.8081], zoom: 12 },
+
+  { id: "santa-cruz", label: "Santa Cruz", group: "santacruz", center: [36.9741, -122.0308], zoom: 13 },
+  { id: "capitola", label: "Capitola", group: "santacruz", center: [36.9752, -121.9533], zoom: 14 },
+  { id: "aptos", label: "Aptos", group: "santacruz", center: [36.9772, -121.8994], zoom: 14 },
+  { id: "scotts-valley", label: "Scotts Valley", group: "santacruz", center: [37.0511, -122.0147], zoom: 14 },
+  { id: "watsonville", label: "Watsonville", group: "santacruz", center: [36.9102, -121.7569], zoom: 13 },
+
+  { id: "salinas", label: "Salinas", group: "valley", center: [36.6777, -121.6555], zoom: 13 },
+  { id: "castroville", label: "Castroville", group: "valley", center: [36.7663, -121.7455], zoom: 14 },
+  { id: "prunedale", label: "Prunedale", group: "valley", center: [36.7769, -121.6694], zoom: 13 },
+  { id: "gilroy", label: "Gilroy", group: "valley", center: [37.0058, -121.5683], zoom: 13 },
+  { id: "gonzales", label: "Gonzales", group: "valley", center: [36.5063, -121.4440], zoom: 14 },
+  { id: "soledad", label: "Soledad", group: "valley", center: [36.4247, -121.3263], zoom: 13 },
+  { id: "greenfield", label: "Greenfield", group: "valley", center: [36.3208, -121.2444], zoom: 13 },
 ];

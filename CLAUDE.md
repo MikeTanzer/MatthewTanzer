@@ -39,7 +39,12 @@ nothing re-hosted. Coverage works two ways: a layer holds **multiple sources** t
 2,000 features regardless of `resultRecordCount`. The map opens on
 `DEFAULT_BOUNDS` (the Peninsula) via `fitBounds` with **`zoomSnap: 0`** — the
 framing sits at ~12.6 and Leaflet's default snap of 1 would round down to 12 and
-show half again as much area. Leaflet with `preferCanvas`, keyless Esri base tiles (CARTO now demands an
+show half again as much area. `COVERAGE_BOUNDS` is the wider served region
+(Santa Cruz/Gilroy to Soledad/Greenfield) and is also what listing markers are
+filtered against. Because of `zoomSnap: 0`, **all programmatic view changes must
+pass `animate: false`** — Leaflet's animated zoom will not reliably apply a
+fractional target (`flyToBounds` never applies it at all). `window.__map` is
+exposed in dev for console debugging. Leaflet with `preferCanvas`, keyless Esri base tiles (CARTO now demands an
 API key). Provenance, validation method and the deliberate omissions are in
 `docs/map-data-sources.md`; `node scripts/probe-map-layers.mjs` re-checks every layer.
 Three traps: **ArcGIS returns HTTP 200 with a 404 error in the body**, so validate parsed bodies,

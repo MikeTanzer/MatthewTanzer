@@ -18,6 +18,19 @@ ArcGIS FeatureServer in the visitor's browser when they toggle it on.
 | OpenStreetMap (Overpass) | Golf courses — baked to `src/data/golf-courses.json` at author time, not fetched at runtime. |
 | Esri | Base map tiles (dark canvas, imagery) — keyless endpoints. |
 
+## Coverage area
+
+`COVERAGE_BOUNDS` in `src/data/map-layers.ts` is the region this map serves:
+`[[36.13, -122.42], [37.06, -121.13]]` — Santa Cruz and Gilroy north, Soledad and
+Greenfield down the Salinas Valley, Big Sur on the coast. It is also what listing
+markers are filtered against; using bounds instead of a list of town names means
+a listing in a newly covered town appears without a code change (this is how the
+Royal Oaks listing started showing up).
+
+`DEFAULT_BOUNDS` is narrower — the Peninsula — and is what the map opens on.
+The two are deliberately different: the map opens where the listings are, and
+"Whole Coverage Area" zooms out to everything served.
+
 ## Coverage model
 
 Two mechanisms keep the map from having holes:
@@ -111,3 +124,37 @@ loaded on toggle, but panning never refreshed anything.
 
 Related: refetch is driven by a `viewTick` state counter rather than a ref read
 inside the Leaflet event closure, so it always reads live React state.
+
+## Fractional zoom and animation do not mix
+
+The map runs `zoomSnap: 0` so `fitBounds` can hold the opening framing, which
+sits at a fractional zoom (~12.6 for the Peninsula, ~9.4 for the whole coverage
+area). With the default `zoomSnap: 1` Leaflet rounds *down* and shows half again
+as much area.
+
+The cost is that Leaflet's **animated** zoom path will not reliably apply a
+fractional target: `flyToBounds` never moved the zoom at all, and an animated
+`fitBounds` worked only on the first call after a clean load, then silently
+no-opped. `fitBounds(bounds, { animate: false })` and
+`setView(center, zoom, { animate: false })` apply it every time, so all
+programmatic view changes pass `animate: false`. Jumps are instant rather than a
+flight, which suits a "jump to" control.
+
+## Truncation is labelled, not hidden
+
+ArcGIS returns at most 2,000 features per request and sets
+`properties.exceededTransferLimit` when it has clipped the result. The layer list
+shows e.g. `4,000+ capped` in gold when that happens. This matters for honesty:
+farmland at the regional view returns the cap, and an unlabelled partial render
+would read as "no farmland beyond here".
+
+## Debugging
+
+In development only, the Leaflet map is exposed as `window.__map`, since it is
+otherwise unreachable from the console. Guarded by `NODE_ENV`, so it is absent
+from the production build.
+
+One trap when verifying visually: the browser pane's screenshots can lag the live
+frame and show stale tiles from a previous zoom. Two rounds of apparent
+"zoomed too far out" bugs were stale frames — `map.getBounds()` and
+`bounds.contains(latlng)` are the reliable checks.

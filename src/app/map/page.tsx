@@ -52,12 +52,14 @@ export default function MapPage() {
         Cruz County Enterprise GIS, CAL FIRE, FEMA, USGS, the California Energy Commission and the
         National Park Service. Layers are fetched for whatever the map is currently showing, and a
         single layer merges every publisher that covers the area, so county lines are not holes.
-        Pan or zoom and the data follows.
+        Pan or zoom and the data follows. Coverage runs from Santa Cruz and Gilroy in the north,
+        down the Salinas Valley through Salinas, Gonzales, Soledad and Greenfield, and out along the
+        coast to Big Sur.
       </p>
 
       <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat n={String(LAYERS.length)} label="Live GIS layers" />
-        <Stat n="12" label="Communities mapped" />
+        <Stat n="23" label="Places mapped" />
         <Stat n="7" label="Public agencies" />
         <Stat n="Live" label="Follows the map" />
       </div>

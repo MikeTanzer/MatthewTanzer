@@ -4,16 +4,20 @@ import "leaflet/dist/leaflet.css";
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { Map as LMap, GeoJSON as LGeoJSON, LayerGroup } from "leaflet";
-import { LAYERS, CATEGORIES, PLACES, DEFAULT_BOUNDS, type MapLayer, type LayerSource, type CategoryId, type Place } from "@/data/map-layers";
+import {
+  LAYERS, CATEGORIES, PLACES, PLACE_GROUPS, DEFAULT_BOUNDS, COVERAGE_BOUNDS,
+  type MapLayer, type LayerSource, type CategoryId, type Place,
+} from "@/data/map-layers";
 import golf from "@/data/golf-courses.json";
 import { getListings, formatPrice } from "@/lib/listings";
 
 type Status = "idle" | "loading" | "ready" | "empty" | "error" | "zoom";
 
-const REGION_CITIES = new Set([
-  "Carmel", "Pebble Beach", "Pacific Grove", "Monterey",
-  "Seaside", "Carmel Valley", "Big Sur", "Carmel Highlands",
-]);
+const [[CS, CW], [CN, CE]] = COVERAGE_BOUNDS;
+/** Inside the mapped region? Bounds beat a town-name list: a listing in a newly
+ *  covered town shows up without anyone remembering to add the name. */
+const inCoverage = (lat?: number | null, lng?: number | null) =>
+  lat != null && lng != null && lat >= CS && lat <= CN && lng >= CW && lng <= CE;
 
 const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services";
 const ESRI_ATTR = "Tiles &copy; Esri";
@@ -89,6 +93,7 @@ export default function RegionMap() {
   const [active, setActive] = useState<Set<string>>(new Set());
   const [status, setStatus] = useState<Record<string, Status>>({});
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [truncated, setTruncated] = useState<Record<string, boolean>>({});
   const [openCat, setOpenCat] = useState<CategoryId | "market" | null>("hazard");
   const [basemap, setBasemap] = useState<keyof typeof BASEMAPS>("dark");
   const [showListings, setShowListings] = useState(true);
@@ -115,7 +120,15 @@ export default function RegionMap() {
         // so allow fractional zoom; the +/- buttons still step by whole levels.
         zoomSnap: 0,
         zoomDelta: 1,
-      }).fitBounds(DEFAULT_BOUNDS);
+      });
+      // Fit once the container has a real size, for the same reason as jumpTo.
+      map.invalidateSize();
+      map.fitBounds(DEFAULT_BOUNDS, { animate: false });
+      if (process.env.NODE_ENV !== "production") {
+        // Dev-only handle: the map is otherwise unreachable from the console,
+        // which makes view/zoom problems tedious to diagnose.
+        (window as unknown as Record<string, unknown>).__map = map;
+      }
       baseRef.current = L.tileLayer(BASEMAPS.dark.url, {
         attribution: BASEMAPS.dark.attr,
         maxZoom: 19,
@@ -162,8 +175,8 @@ export default function RegionMap() {
     if (!markerGroups.current.listings) {
       const g = L.layerGroup();
       for (const l of getListings()) {
-        if (!l.latitude || !l.longitude || !REGION_CITIES.has(l.city)) continue;
-        L.circleMarker([l.latitude, l.longitude], {
+        if (!inCoverage(l.latitude, l.longitude)) continue;
+        L.circleMarker([l.latitude as number, l.longitude as number], {
           radius: 8, color: "#0a1220", weight: 2,
           fillColor: "#c6a15b", fillOpacity: 1,
         })
@@ -212,7 +225,11 @@ export default function RegionMap() {
 
   // ── fetch one source for the current viewport ─────────────────────────
   const fetchSource = useCallback(
-    async (src: LayerSource, bbox: string, signal: AbortSignal): Promise<GeoJSON.Feature[]> => {
+    async (
+      src: LayerSource,
+      bbox: string,
+      signal: AbortSignal
+    ): Promise<{ features: GeoJSON.Feature[]; capped: boolean }> => {
       if (src.api === "usgs") {
         const [w, sth, e, n] = bbox.split(",");
         const u =
@@ -232,7 +249,7 @@ export default function RegionMap() {
           if (typeof d === "number") f.properties.depth = `${d.toFixed(1)} km`;
           if (typeof f.properties.mag === "number") f.properties.mag = `M ${f.properties.mag.toFixed(1)}`;
         }
-        return j.features ?? [];
+        return { features: j.features ?? [], capped: false };
       }
       const params = new URLSearchParams({
         where: "1=1",
@@ -256,7 +273,10 @@ export default function RegionMap() {
       for (const f of j.features ?? []) {
         if (f.properties) f.properties.__agency = src.agency;
       }
-      return j.features ?? [];
+      // ArcGIS pages cap at 2,000 features whatever resultRecordCount asks for
+      // and flags it here. Surfaced in the UI so a truncated layer cannot look
+      // complete — at regional zoom that would read as "no farmland here".
+      return { features: j.features ?? [], capped: !!j.properties?.exceededTransferLimit };
     },
     []
   );
@@ -288,7 +308,8 @@ export default function RegionMap() {
       );
       if (ctrl.signal.aborted) return;
 
-      const feats = settled.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
+      const feats = settled.flatMap((r) => (r.status === "fulfilled" ? r.value.features : []));
+      const capped = settled.some((r) => r.status === "fulfilled" && r.value.capped);
       const failed = settled.filter((r) => r.status === "rejected");
       if (failed.length === layer.sources.length) {
         console.error(`[map] ${layer.id}: every source failed`, failed);
@@ -324,6 +345,7 @@ export default function RegionMap() {
 
       overlays.current[layer.id] = gl;
       setCounts((c) => ({ ...c, [layer.id]: feats.length }));
+      setTruncated((t) => ({ ...t, [layer.id]: capped }));
       setStatus((s) => ({ ...s, [layer.id]: "ready" }));
     },
     [fetchSource]
@@ -375,8 +397,18 @@ export default function RegionMap() {
   const jumpTo = (p: Place) => {
     const map = mapRef.current;
     if (!map) return;
-    if (p.bounds) map.flyToBounds(p.bounds, { duration: 0.8 });
-    else if (p.center) map.flyTo(p.center, p.zoom ?? 13, { duration: 0.8 });
+    // Fitting bounds against a container Leaflet still thinks is zero-size
+    // resolves to minZoom — a click during first layout would land on the whole
+    // world. Re-measure first; it is a no-op once the size is known.
+    map.invalidateSize();
+    // animate:false is deliberate. The map runs zoomSnap:0 so the opening
+    // framing can sit at a fractional zoom (~12.6); Leaflet's animated zoom
+    // path does not apply fractional targets reliably — flyToBounds and an
+    // animated fitBounds both leave the zoom untouched once an earlier
+    // transition has run, while animate:false applies it every time. Jumps are
+    // instant instead of a flight, which for a "jump to" control reads fine.
+    if (p.bounds) map.fitBounds(p.bounds, { animate: false });
+    else if (p.center) map.setView(p.center, p.zoom ?? 13, { animate: false });
   };
 
   const clearAll = () => {
@@ -396,7 +428,13 @@ export default function RegionMap() {
     if (s === "error") return <span className="text-[10px] text-red-400">unavailable</span>;
     if (s === "empty") return <span className="text-[10px] text-cream/40">none in view</span>;
     if (s === "zoom") return <span className="text-[10px] text-gold-400/70">zoom in</span>;
-    if (active.has(id) && counts[id]) return <span className="text-[10px] text-cream/40">{counts[id].toLocaleString()}</span>;
+    if (active.has(id) && counts[id])
+      return (
+        <span className={`text-[10px] ${truncated[id] ? "text-gold-400/70" : "text-cream/40"}`}>
+          {counts[id].toLocaleString()}
+          {truncated[id] ? "+ capped" : ""}
+        </span>
+      );
     return null;
   };
 
@@ -412,16 +450,30 @@ export default function RegionMap() {
             </button>
           )}
         </div>
-        <div className="mb-5 flex flex-wrap gap-1.5">
-          {PLACES.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => jumpTo(p)}
-              className="rounded-sm border border-gold-500/25 px-2.5 py-1.5 text-[11px] text-cream/80 transition-colors hover:border-gold-400 hover:text-gold-300"
-            >
-              {p.label}
-            </button>
-          ))}
+        <div className="mb-5 space-y-3">
+          {PLACE_GROUPS.map((g) => {
+            const places = PLACES.filter((p) => p.group === g.id);
+            if (!places.length) return null;
+            return (
+              <div key={g.id}>
+                <div className="mb-1.5 text-[0.6rem] tracking-[0.2em] text-cream/35 uppercase">
+                  {g.label}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {places.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => jumpTo(p)}
+                      disabled={!ready}
+                      className="rounded-sm border border-gold-500/25 px-2.5 py-1.5 text-[11px] text-cream/80 transition-colors hover:border-gold-400 hover:text-gold-300 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-gold-500/25 disabled:hover:text-cream/80"
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         <div className="mb-5 space-y-2 border-y border-gold-500/15 py-4">
