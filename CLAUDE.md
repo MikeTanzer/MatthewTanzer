@@ -31,14 +31,19 @@ is switched to this site.
 Note: the listing set is *not* Monterey-only — it includes Bay Area / Napa / Truckee properties
 from the Coldwell Banker feed, so location filtering matters on the listings page.
 
-**Region map (`/map`):** 35 public GIS layers (flood, fire, zoning, coastal, utilities,
-schools, farmland) fetched live from Monterey County / CAL FIRE / FEMA ArcGIS in the browser —
-nothing re-hosted. Leaflet with `preferCanvas`, keyless Esri base tiles (CARTO now demands an
+**Region map (`/map`):** 41 layers / 58 sources across 7 agencies (Monterey County, Santa Cruz
+County, FEMA NFHL, CAL FIRE, USGS, CA Energy Commission, NPS), fetched live in the browser —
+nothing re-hosted. Coverage works two ways: a layer holds **multiple sources** that are merged
+(so county lines aren't holes), and queries use the **map's current viewport**, refetched on
+`moveend`, so panning loads new areas. Dense layers carry `minZoom`; FeatureServer pages cap at
+2,000 features regardless of `resultRecordCount`. Leaflet with `preferCanvas`, keyless Esri base tiles (CARTO now demands an
 API key). Provenance, validation method and the deliberate omissions are in
 `docs/map-data-sources.md`; `node scripts/probe-map-layers.mjs` re-checks every layer.
-Two traps: **ArcGIS returns HTTP 200 with a 404 error in the body**, so validate parsed bodies,
-not status codes; and Leaflet popups are raw HTML strings that Next will *not* rewrite with
-basePath, hence `NEXT_PUBLIC_BASE_PATH`. Do **not** add a sex-offender layer — Penal Code
+Three traps: **ArcGIS returns HTTP 200 with a 404 error in the body**, so validate parsed bodies,
+not status codes; Leaflet popups are raw HTML strings that Next will *not* rewrite with basePath,
+hence `NEXT_PUBLIC_BASE_PATH`; and the map init effect must only `remove()` **the map that run
+created** — under StrictMode, tearing down another run's map leaves a live map owned by a dead
+instance whose refs never update, so viewport refetches silently no-op (see docs). Do **not** add a sex-offender layer — Penal Code
 § 290.46(j) bars registry use for housing purposes (civil penalties to $25k + treble damages);
 the page carries the Civil Code § 2079.10a notice instead.
 

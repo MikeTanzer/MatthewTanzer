@@ -4,11 +4,11 @@ import "leaflet/dist/leaflet.css";
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { Map as LMap, GeoJSON as LGeoJSON, LayerGroup } from "leaflet";
-import { LAYERS, CATEGORIES, PLACES, type MapLayer, type CategoryId } from "@/data/map-layers";
+import { LAYERS, CATEGORIES, PLACES, type MapLayer, type LayerSource, type CategoryId } from "@/data/map-layers";
 import golf from "@/data/golf-courses.json";
 import { getListings, formatPrice } from "@/lib/listings";
 
-type Status = "idle" | "loading" | "ready" | "empty" | "error";
+type Status = "idle" | "loading" | "ready" | "empty" | "error" | "zoom";
 
 const REGION_CITIES = new Set([
   "Carmel", "Pebble Beach", "Pacific Grove", "Monterey",
@@ -41,7 +41,7 @@ const BASEMAPS = {
 /** Fields never worth showing in a popup. */
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
-const SKIP = /^(fid|objectid|globalid|shape|se_anno|created_|last_edit|editor|esri)/i;
+const SKIP = /^(__|fid|objectid|globalid|shape|se_anno|created_|last_edit|editor|esri)/i;
 
 function popupHtml(layer: MapLayer, props: Record<string, unknown>): string {
   const entries: [string, unknown][] = [];
@@ -68,7 +68,9 @@ function popupHtml(layer: MapLayer, props: Record<string, unknown>): string {
   return `<div style="min-width:190px">
       <div style="color:${layer.color};font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:6px">${layer.label}</div>
       ${rows || '<div style="color:#8b9bb4;font-size:12px">No attributes published.</div>'}
-      <div style="margin-top:8px;padding-top:6px;border-top:1px solid #ffffff22;color:#6b7a91;font-size:10px">${layer.source}</div>
+      <div style="margin-top:8px;padding-top:6px;border-top:1px solid #ffffff22;color:#6b7a91;font-size:10px">${
+        (props.__agency as string) ?? layer.sources.map((s) => s.agency).join(", ")
+      }</div>
     </div>`;
 }
 
@@ -77,11 +79,13 @@ export default function RegionMap() {
   const mapRef = useRef<LMap | null>(null);
   const LRef = useRef<typeof import("leaflet") | null>(null);
   const overlays = useRef<Record<string, LGeoJSON>>({});
+  const abort = useRef<Record<string, AbortController>>({});
   const markerGroups = useRef<Record<string, LayerGroup>>({});
   const baseRef = useRef<ReturnType<typeof import("leaflet").tileLayer> | null>(null);
   const labelRef = useRef<ReturnType<typeof import("leaflet").tileLayer> | null>(null);
 
   const [ready, setReady] = useState(false);
+  const [viewTick, setViewTick] = useState(0);
   const [active, setActive] = useState<Set<string>>(new Set());
   const [status, setStatus] = useState<Record<string, Status>>({});
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -93,13 +97,18 @@ export default function RegionMap() {
   // ── init map ──────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
+    // Only this run's own map may be torn down. React StrictMode mounts, cleans
+    // up and remounts in dev; removing a map another run created leaves a live
+    // map on screen owned by a dead instance, whose refs never update again.
+    let own: LMap | null = null;
+
     (async () => {
       const L = (await import("leaflet")).default;
       if (cancelled || !mapEl.current || mapRef.current) return;
       LRef.current = L;
       const map = L.map(mapEl.current, {
-        center: [36.48, -121.88],
-        zoom: 10,
+        center: [36.65, -121.8],
+        zoom: 9,
         preferCanvas: true, // canvas renderer handles thousands of polygons
         zoomControl: true,
         scrollWheelZoom: true,
@@ -112,13 +121,18 @@ export default function RegionMap() {
         maxZoom: 19,
         pane: "shadowPane", // above overlays so place names stay readable
       }).addTo(map);
+      own = map;
       mapRef.current = map;
       setReady(true);
     })();
+
     return () => {
       cancelled = true;
-      mapRef.current?.remove();
-      mapRef.current = null;
+      if (own) {
+        own.remove();
+        if (mapRef.current === own) mapRef.current = null;
+        setReady(false);
+      }
     };
   }, []);
 
@@ -193,55 +207,104 @@ export default function RegionMap() {
     toggle("golf", showGolf);
   }, [ready, showListings, showGolf]);
 
-  // ── fetch + toggle a GIS layer ────────────────────────────────────────
-  const toggleLayer = useCallback(async (layer: MapLayer) => {
-    const L = LRef.current, map = mapRef.current;
-    if (!L || !map) return;
-
-    // already on → remove
-    if (active.has(layer.id)) {
-      const ex = overlays.current[layer.id];
-      if (ex) map.removeLayer(ex);
-      setActive((p) => { const n = new Set(p); n.delete(layer.id); return n; });
-      return;
-    }
-    setActive((p) => new Set(p).add(layer.id));
-
-    // cached → re-add
-    if (overlays.current[layer.id]) {
-      overlays.current[layer.id].addTo(map);
-      return;
-    }
-
-    setStatus((s) => ({ ...s, [layer.id]: "loading" }));
-    try {
+  // ── fetch one source for the current viewport ─────────────────────────
+  const fetchSource = useCallback(
+    async (src: LayerSource, bbox: string, signal: AbortSignal): Promise<GeoJSON.Feature[]> => {
+      if (src.api === "usgs") {
+        const [w, sth, e, n] = bbox.split(",");
+        const u =
+          `${src.url}?format=geojson&starttime=1900-01-01&minmagnitude=4` +
+          `&minlongitude=${w}&minlatitude=${sth}&maxlongitude=${e}&maxlatitude=${n}&limit=1500`;
+        const j = await (await fetch(u, { signal })).json();
+        for (const f of j.features ?? []) {
+          if (!f.properties) continue;
+          f.properties.__agency = src.agency;
+          // USGS ships epoch millis and puts depth in the geometry's 3rd ordinate.
+          if (typeof f.properties.time === "number") {
+            f.properties.time = new Date(f.properties.time).toLocaleDateString("en-US", {
+              year: "numeric", month: "short", day: "numeric",
+            });
+          }
+          const d = f.geometry?.coordinates?.[2];
+          if (typeof d === "number") f.properties.depth = `${d.toFixed(1)} km`;
+          if (typeof f.properties.mag === "number") f.properties.mag = `M ${f.properties.mag.toFixed(1)}`;
+        }
+        return j.features ?? [];
+      }
       const params = new URLSearchParams({
         where: "1=1",
-        geometry: "-122.10,36.00,-121.60,36.80",
+        geometry: bbox,
         geometryType: "esriGeometryEnvelope",
         inSR: "4326",
         outSR: "4326",
         spatialRel: "esriSpatialRelIntersects",
         outFields: "*",
         returnGeometry: "true",
-        resultRecordCount: String(layer.limit ?? 1500),
+        resultRecordCount: String(src.limit ?? 1500),
         f: "geojson",
       });
-      if (layer.offset) params.set("maxAllowableOffset", String(layer.offset));
-
-      const res = await fetch(`${layer.url}/query?${params}`);
+      if (src.offset) params.set("maxAllowableOffset", String(src.offset));
+      const res = await fetch(`${src.url}/query?${params}`, { signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const gj = await res.json();
-      if (gj.error) throw new Error(gj.error.message || "service error");
+      const j = await res.json();
+      // ArcGIS answers 200 with an error body — status alone proves nothing.
+      if (j.error) throw new Error(j.error.message || "service error");
+      // Tag each feature so the popup can name the publisher.
+      for (const f of j.features ?? []) {
+        if (f.properties) f.properties.__agency = src.agency;
+      }
+      return j.features ?? [];
+    },
+    []
+  );
 
-      const feats = gj.features?.length ?? 0;
-      if (!feats) {
-        setStatus((s) => ({ ...s, [layer.id]: "empty" }));
-        setActive((p) => { const n = new Set(p); n.delete(layer.id); return n; });
+  /** Draw a layer for the current view, merging every source that has data. */
+  const drawLayer = useCallback(
+    async (layer: MapLayer) => {
+      const L = LRef.current, map = mapRef.current;
+      if (!L || !map) return;
+
+      if (layer.minZoom && map.getZoom() < layer.minZoom) {
+        setStatus((s) => ({ ...s, [layer.id]: "zoom" }));
+        const ex = overlays.current[layer.id];
+        if (ex) { map.removeLayer(ex); delete overlays.current[layer.id]; }
         return;
       }
 
-      const gl = L.geoJSON(gj, {
+      abort.current[layer.id]?.abort();
+      const ctrl = new AbortController();
+      abort.current[layer.id] = ctrl;
+
+      const b = map.getBounds().pad(0.15);
+      const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
+        .map((v) => v.toFixed(5)).join(",");
+
+      setStatus((s) => ({ ...s, [layer.id]: "loading" }));
+      const settled = await Promise.allSettled(
+        layer.sources.map((src) => fetchSource(src, bbox, ctrl.signal))
+      );
+      if (ctrl.signal.aborted) return;
+
+      const feats = settled.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
+      const failed = settled.filter((r) => r.status === "rejected");
+      if (failed.length === layer.sources.length) {
+        console.error(`[map] ${layer.id}: every source failed`, failed);
+        setStatus((s) => ({ ...s, [layer.id]: "error" }));
+        return;
+      }
+      if (failed.length) console.warn(`[map] ${layer.id}: ${failed.length} source(s) failed`);
+
+      const prev = overlays.current[layer.id];
+      if (prev) map.removeLayer(prev);
+
+      if (!feats.length) {
+        delete overlays.current[layer.id];
+        setStatus((s) => ({ ...s, [layer.id]: "empty" }));
+        setCounts((c) => ({ ...c, [layer.id]: 0 }));
+        return;
+      }
+
+      const gl = L.geoJSON({ type: "FeatureCollection", features: feats } as GeoJSON.FeatureCollection, {
         style: () =>
           layer.kind === "line"
             ? { color: layer.color, weight: 2.5, opacity: 0.9 }
@@ -257,14 +320,54 @@ export default function RegionMap() {
       }).addTo(map);
 
       overlays.current[layer.id] = gl;
-      setCounts((c) => ({ ...c, [layer.id]: feats }));
+      setCounts((c) => ({ ...c, [layer.id]: feats.length }));
       setStatus((s) => ({ ...s, [layer.id]: "ready" }));
-    } catch (err) {
-      console.error(`[map] ${layer.id}:`, err);
-      setStatus((s) => ({ ...s, [layer.id]: "error" }));
-      setActive((p) => { const n = new Set(p); n.delete(layer.id); return n; });
+    },
+    [fetchSource]
+  );
+
+  const toggleLayer = useCallback(
+    (layer: MapLayer) => {
+      const map = mapRef.current;
+      if (!map) return;
+      if (active.has(layer.id)) {
+        abort.current[layer.id]?.abort();
+        const ex = overlays.current[layer.id];
+        if (ex) { map.removeLayer(ex); delete overlays.current[layer.id]; }
+        setActive((p) => { const n = new Set(p); n.delete(layer.id); return n; });
+        setStatus((s) => ({ ...s, [layer.id]: "idle" }));
+        return;
+      }
+      setActive((p) => new Set(p).add(layer.id));
+      void drawLayer(layer);
+    },
+    [active, drawLayer]
+  );
+
+  // ── bump a counter when the view settles; the effect below does the work
+  // so refetching reads live state instead of a closed-over ref ────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    let t: ReturnType<typeof setTimeout>;
+    const onMove = () => {
+      clearTimeout(t);
+      t = setTimeout(() => setViewTick((v) => v + 1), 700); // one refetch per pan
+    };
+    map.on("moveend", onMove);
+    return () => { clearTimeout(t); map.off("moveend", onMove); };
+  }, [ready]);
+
+  useEffect(() => {
+    if (!viewTick) return; // skip the initial render
+    for (const id of active) {
+      const layer = LAYERS.find((l) => l.id === id);
+      if (layer) void drawLayer(layer);
     }
-  }, [active]);
+    // `active` intentionally omitted: toggling already draws its own layer, and
+    // including it would refetch every layer on each toggle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewTick, drawLayer]);
 
   const flyTo = (center: [number, number], zoom: number) =>
     mapRef.current?.flyTo(center, zoom, { duration: 0.8 });
@@ -273,8 +376,9 @@ export default function RegionMap() {
     const map = mapRef.current;
     if (!map) return;
     for (const id of active) {
+      abort.current[id]?.abort();
       const l = overlays.current[id];
-      if (l) map.removeLayer(l);
+      if (l) { map.removeLayer(l); delete overlays.current[id]; }
     }
     setActive(new Set());
   };
@@ -283,7 +387,8 @@ export default function RegionMap() {
     const s = status[id];
     if (s === "loading") return <span className="text-[10px] text-cream/40">loading…</span>;
     if (s === "error") return <span className="text-[10px] text-red-400">unavailable</span>;
-    if (s === "empty") return <span className="text-[10px] text-cream/40">none here</span>;
+    if (s === "empty") return <span className="text-[10px] text-cream/40">none in view</span>;
+    if (s === "zoom") return <span className="text-[10px] text-gold-400/70">zoom in</span>;
     if (active.has(id) && counts[id]) return <span className="text-[10px] text-cream/40">{counts[id].toLocaleString()}</span>;
     return null;
   };

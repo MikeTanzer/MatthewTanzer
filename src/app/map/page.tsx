@@ -17,9 +17,9 @@ const NOT_MAPPABLE = [
     how: "They appear in the preliminary title report, usually within days of opening escrow. Matthew reads the Schedule B exceptions with you line by line.",
   },
   {
-    title: "Private sewer laterals",
-    why: "The pipe from a house to the main is private property, and utilities withhold detailed main alignments as critical infrastructure.",
-    how: "The Wastewater Districts layer shows which agency serves a parcel. For the lateral itself, a sewer-camera inspection during your inspection window is the answer — and it is worth doing on any pre-1970 home.",
+    title: "Sewer laterals in Monterey County",
+    why: "Santa Cruz County publishes its laterals and they are mapped here. Monterey County does not release them, so south of the county line the map shows service districts only.",
+    how: "The Wastewater Districts layer tells you which agency serves a parcel. For the lateral itself a sewer-camera inspection during your inspection window is the answer, and it is worth doing on any pre-1970 home either way.",
   },
   {
     title: "HOA fees",
@@ -28,8 +28,8 @@ const NOT_MAPPABLE = [
   },
   {
     title: "Exact flight paths",
-    why: "Monterey Regional (MRY) publishes instrument procedures, but actual tracks shift daily with wind, aircraft type and air-traffic direction, so a single drawn line would misrepresent it.",
-    how: "The honest test is time on site. Visit at different hours — the practical noise question on the Peninsula is runway 10R/28L alignment over Del Rey Oaks and parts of Monterey.",
+    why: "Airport safety and clear zones are fixed to the ground and are mapped here. Actual flight tracks are not — they shift daily with wind, aircraft type and air-traffic direction, so a single drawn corridor would misrepresent them.",
+    how: "Use the Airport Safety & Clear Zones layer for the fixed part, then visit at different hours for the rest. The practical noise question on the Peninsula is runway 10R/28L alignment over Del Rey Oaks and parts of Monterey.",
   },
 ];
 
@@ -48,17 +48,18 @@ export default function MapPage() {
       <div className="text-xs font-medium tracking-[0.4em] text-gold-400 uppercase">Region Intelligence</div>
       <h1 className="font-display mt-2 text-5xl font-semibold">Map &amp; Data Layers</h1>
       <p className="mt-4 max-w-3xl leading-relaxed text-cream/65">
-        Every overlay below is drawn live from the agency that publishes it — Monterey County
-        Enterprise GIS, CAL FIRE, FEMA and the California Coastal Commission. Nothing is copied or
-        redrawn here, so what you see is what the county has on file today. Toggle a layer and it is
-        fetched straight from the source.
+        Every overlay is drawn live from the agency that publishes it — Monterey County and Santa
+        Cruz County Enterprise GIS, CAL FIRE, FEMA, USGS, the California Energy Commission and the
+        National Park Service. Layers are fetched for whatever the map is currently showing, and a
+        single layer merges every publisher that covers the area, so county lines are not holes.
+        Pan or zoom and the data follows.
       </p>
 
       <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat n={String(LAYERS.length)} label="Live GIS layers" />
-        <Stat n="8" label="Communities mapped" />
-        <Stat n="20" label="Golf courses" />
-        <Stat n="Live" label="Straight from source" />
+        <Stat n="12" label="Communities mapped" />
+        <Stat n="7" label="Public agencies" />
+        <Stat n="Live" label="Follows the map" />
       </div>
 
       <div className="mt-10">
@@ -178,18 +179,21 @@ export default function MapPage() {
         <div className="mt-4 grid gap-6 text-sm leading-relaxed text-cream/60 md:grid-cols-2">
           <div>
             <p>
-              Layers are requested directly from <strong>Monterey County Enterprise GIS</strong>,
-              with fire severity zones originating from <strong>CAL FIRE</strong>, flood zones from{" "}
-              <strong>FEMA</strong> DFIRM panels, and coastal boundaries from the{" "}
-              <strong>California Coastal Commission</strong>. Golf course locations come from{" "}
-              <strong>OpenStreetMap</strong>. Base maps are CARTO and Esri World Imagery.
+              Layers are requested directly from <strong>Monterey County</strong> and{" "}
+              <strong>Santa Cruz County</strong> Enterprise GIS, with fire severity zones from{" "}
+              <strong>CAL FIRE</strong>, flood zones from <strong>FEMA</strong>&apos;s National Flood
+              Hazard Layer, seismic history from <strong>USGS</strong>, transmission lines from the{" "}
+              <strong>California Energy Commission</strong>, and historic listings from the{" "}
+              <strong>National Park Service</strong>. Golf courses come from{" "}
+              <strong>OpenStreetMap</strong>; base maps from <strong>Esri</strong>.
             </p>
           </div>
           <div>
             <p>
               Public GIS is a <em>planning</em> tool, not a determination. Boundaries are generalised,
               publication lags amendments, and large layers are capped and simplified here for
-              performance, so zoom in before relying on an edge. For anything that affects your
+              performance, so zoom in before relying on an edge. Dense layers such as sewer laterals
+              only load once you are zoomed in far enough to draw them honestly. For anything that affects your
               offer — a flood determination, a fire-zone insurance quote, a permit question — get the
               parcel-specific answer from the county, your title officer, or your insurer.
             </p>
