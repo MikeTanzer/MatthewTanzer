@@ -503,18 +503,39 @@ export const LAYERS: MapLayer[] = [
   },
 ];
 
-/** Places to jump between, now spanning both counties. */
-export const PLACES = [
-  { id: "all", label: "Whole Region", center: [36.65, -121.80] as [number, number], zoom: 9 },
-  { id: "monterey", label: "Monterey", center: [36.6002, -121.8947] as [number, number], zoom: 14 },
-  { id: "carmel", label: "Carmel-by-the-Sea", center: [36.5552, -121.9233] as [number, number], zoom: 15 },
-  { id: "pacific-grove", label: "Pacific Grove", center: [36.6177, -121.9166] as [number, number], zoom: 14 },
-  { id: "pebble-beach", label: "Pebble Beach", center: [36.5725, -121.9486] as [number, number], zoom: 14 },
-  { id: "seaside", label: "Seaside", center: [36.6111, -121.8513] as [number, number], zoom: 14 },
-  { id: "carmel-valley", label: "Carmel Valley", center: [36.4819, -121.7314] as [number, number], zoom: 13 },
-  { id: "carmel-highlands", label: "Carmel Highlands", center: [36.4894, -121.9330] as [number, number], zoom: 14 },
-  { id: "big-sur", label: "Big Sur", center: [36.2704, -121.8081] as [number, number], zoom: 12 },
-  { id: "salinas", label: "Salinas", center: [36.6777, -121.6555] as [number, number], zoom: 13 },
-  { id: "watsonville", label: "Watsonville", center: [36.9102, -121.7569] as [number, number], zoom: 13 },
-  { id: "santa-cruz", label: "Santa Cruz", center: [36.9741, -122.0308] as [number, number], zoom: 13 },
+/**
+ * Opening view: the Monterey Peninsula from Pacific Grove and Seaside down past
+ * Carmel, reaching east to Carmel Valley. Expressed as bounds rather than a
+ * centre and zoom because the framing lands between integer zoom levels — with a
+ * fixed zoom it would crop on narrow screens and drift on wide ones, whereas
+ * fitBounds reproduces it at any container width.
+ */
+export const DEFAULT_BOUNDS: [[number, number], [number, number]] = [
+  [36.517, -122.000],
+  [36.645, -121.793],
+];
+
+export interface Place {
+  id: string;
+  label: string;
+  center?: [number, number];
+  zoom?: number;
+  bounds?: [[number, number], [number, number]];
+}
+
+/** Places to jump between, spanning both counties. */
+export const PLACES: Place[] = [
+  { id: "peninsula", label: "Monterey Peninsula", bounds: DEFAULT_BOUNDS },
+  { id: "all", label: "Whole Region", center: [36.65, -121.80], zoom: 9 },
+  { id: "monterey", label: "Monterey", center: [36.6002, -121.8947], zoom: 14 },
+  { id: "carmel", label: "Carmel-by-the-Sea", center: [36.5552, -121.9233], zoom: 15 },
+  { id: "pacific-grove", label: "Pacific Grove", center: [36.6177, -121.9166], zoom: 14 },
+  { id: "pebble-beach", label: "Pebble Beach", center: [36.5725, -121.9486], zoom: 14 },
+  { id: "seaside", label: "Seaside", center: [36.6111, -121.8513], zoom: 14 },
+  { id: "carmel-valley", label: "Carmel Valley", center: [36.4819, -121.7314], zoom: 13 },
+  { id: "carmel-highlands", label: "Carmel Highlands", center: [36.4894, -121.9330], zoom: 14 },
+  { id: "big-sur", label: "Big Sur", center: [36.2704, -121.8081], zoom: 12 },
+  { id: "salinas", label: "Salinas", center: [36.6777, -121.6555], zoom: 13 },
+  { id: "watsonville", label: "Watsonville", center: [36.9102, -121.7569], zoom: 13 },
+  { id: "santa-cruz", label: "Santa Cruz", center: [36.9741, -122.0308], zoom: 13 },
 ];

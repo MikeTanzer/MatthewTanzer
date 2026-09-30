@@ -4,7 +4,7 @@ import "leaflet/dist/leaflet.css";
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { Map as LMap, GeoJSON as LGeoJSON, LayerGroup } from "leaflet";
-import { LAYERS, CATEGORIES, PLACES, type MapLayer, type LayerSource, type CategoryId } from "@/data/map-layers";
+import { LAYERS, CATEGORIES, PLACES, DEFAULT_BOUNDS, type MapLayer, type LayerSource, type CategoryId, type Place } from "@/data/map-layers";
 import golf from "@/data/golf-courses.json";
 import { getListings, formatPrice } from "@/lib/listings";
 
@@ -107,12 +107,15 @@ export default function RegionMap() {
       if (cancelled || !mapEl.current || mapRef.current) return;
       LRef.current = L;
       const map = L.map(mapEl.current, {
-        center: [36.65, -121.8],
-        zoom: 9,
         preferCanvas: true, // canvas renderer handles thousands of polygons
         zoomControl: true,
         scrollWheelZoom: true,
-      });
+        // The opening framing sits at ~12.6. Leaflet's default zoomSnap of 1
+        // would round fitBounds down to 12 and show half again as much area,
+        // so allow fractional zoom; the +/- buttons still step by whole levels.
+        zoomSnap: 0,
+        zoomDelta: 1,
+      }).fitBounds(DEFAULT_BOUNDS);
       baseRef.current = L.tileLayer(BASEMAPS.dark.url, {
         attribution: BASEMAPS.dark.attr,
         maxZoom: 19,
@@ -369,8 +372,12 @@ export default function RegionMap() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewTick, drawLayer]);
 
-  const flyTo = (center: [number, number], zoom: number) =>
-    mapRef.current?.flyTo(center, zoom, { duration: 0.8 });
+  const jumpTo = (p: Place) => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (p.bounds) map.flyToBounds(p.bounds, { duration: 0.8 });
+    else if (p.center) map.flyTo(p.center, p.zoom ?? 13, { duration: 0.8 });
+  };
 
   const clearAll = () => {
     const map = mapRef.current;
@@ -409,7 +416,7 @@ export default function RegionMap() {
           {PLACES.map((p) => (
             <button
               key={p.id}
-              onClick={() => flyTo(p.center, p.zoom)}
+              onClick={() => jumpTo(p)}
               className="rounded-sm border border-gold-500/25 px-2.5 py-1.5 text-[11px] text-cream/80 transition-colors hover:border-gold-400 hover:text-gold-300"
             >
               {p.label}

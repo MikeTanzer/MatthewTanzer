@@ -36,7 +36,10 @@ County, FEMA NFHL, CAL FIRE, USGS, CA Energy Commission, NPS), fetched live in t
 nothing re-hosted. Coverage works two ways: a layer holds **multiple sources** that are merged
 (so county lines aren't holes), and queries use the **map's current viewport**, refetched on
 `moveend`, so panning loads new areas. Dense layers carry `minZoom`; FeatureServer pages cap at
-2,000 features regardless of `resultRecordCount`. Leaflet with `preferCanvas`, keyless Esri base tiles (CARTO now demands an
+2,000 features regardless of `resultRecordCount`. The map opens on
+`DEFAULT_BOUNDS` (the Peninsula) via `fitBounds` with **`zoomSnap: 0`** — the
+framing sits at ~12.6 and Leaflet's default snap of 1 would round down to 12 and
+show half again as much area. Leaflet with `preferCanvas`, keyless Esri base tiles (CARTO now demands an
 API key). Provenance, validation method and the deliberate omissions are in
 `docs/map-data-sources.md`; `node scripts/probe-map-layers.mjs` re-checks every layer.
 Three traps: **ArcGIS returns HTTP 200 with a 404 error in the body**, so validate parsed bodies,
