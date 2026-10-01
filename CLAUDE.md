@@ -44,7 +44,10 @@ show half again as much area. `COVERAGE_BOUNDS` is the wider served region
 filtered against. Because of `zoomSnap: 0`, **all programmatic view changes must
 pass `animate: false`** — Leaflet's animated zoom will not reliably apply a
 fractional target (`flyToBounds` never applies it at all). `window.__map` is
-exposed in dev for console debugging. Leaflet with `preferCanvas`, keyless Esri base tiles (CARTO now demands an
+exposed in dev for console debugging. Layer sources render **progressively** (one
+slow source must not block the rest — FEMA NFHL has been measured at 25s against
+1-3s for the county services) with a 20s per-source timeout and a per-layer
+generation counter. Leaflet with `preferCanvas`, keyless Esri base tiles (CARTO now demands an
 API key). Provenance, validation method and the deliberate omissions are in
 `docs/map-data-sources.md`; `node scripts/probe-map-layers.mjs` re-checks every layer.
 Three traps: **ArcGIS returns HTTP 200 with a 404 error in the body**, so validate parsed bodies,

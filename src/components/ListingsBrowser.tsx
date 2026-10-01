@@ -11,7 +11,7 @@ export default function ListingsBrowser({ listings, cities }: { listings: Listin
   const [sort, setSort] = useState<Sort>("price-desc");
 
   const shown = useMemo(() => {
-    let out = city === "all" ? [...listings] : listings.filter((l) => l.city === city);
+    const out = city === "all" ? [...listings] : listings.filter((l) => l.city === city);
     if (sort === "price-desc") out.sort((a, b) => (b.price || 0) - (a.price || 0));
     if (sort === "price-asc") out.sort((a, b) => (a.price || 0) - (b.price || 0));
     if (sort === "newest") out.sort((a, b) => (a.daysOnMarket ?? 9999) - (b.daysOnMarket ?? 9999));

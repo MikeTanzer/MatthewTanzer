@@ -38,6 +38,7 @@ await Promise.all(
     if (url.includes("earthquake.usgs.gov")) {
       try {
         const j = await (await fetch(`${url}?format=geojson&starttime=2020-01-01&minmagnitude=4&limit=1`)).json();
+        if (j.features === undefined) throw new Error("no features key");
         console.log(`  ✓ ${label.padEnd(52)} USGS ok`);
       } catch (e) { bad++; console.log(`  ✗ ${label.padEnd(52)} ${e.message.slice(0, 40)}`); }
       return;

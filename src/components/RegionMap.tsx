@@ -3,7 +3,7 @@
 import "leaflet/dist/leaflet.css";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import type { Map as LMap, GeoJSON as LGeoJSON, LayerGroup } from "leaflet";
+import type { Map as LMap, LayerGroup } from "leaflet";
 import {
   LAYERS, CATEGORIES, PLACES, PLACE_GROUPS, DEFAULT_BOUNDS, COVERAGE_BOUNDS,
   type MapLayer, type LayerSource, type CategoryId, type Place,
@@ -45,6 +45,9 @@ const BASEMAPS = {
 /** Fields never worth showing in a popup. */
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
+/** A source slower than this is dropped for this pass. */
+const SOURCE_TIMEOUT_MS = 20000;
+
 const SKIP = /^(__|fid|objectid|globalid|shape|se_anno|created_|last_edit|editor|esri)/i;
 
 function popupHtml(layer: MapLayer, props: Record<string, unknown>): string {
@@ -82,8 +85,11 @@ export default function RegionMap() {
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LMap | null>(null);
   const LRef = useRef<typeof import("leaflet") | null>(null);
-  const overlays = useRef<Record<string, LGeoJSON>>({});
+  /** One LayerGroup per logical layer; each source adds its own GeoJSON into it. */
+  const overlays = useRef<Record<string, LayerGroup>>({});
   const abort = useRef<Record<string, AbortController>>({});
+  /** Per-layer request generation, so a slow earlier pass cannot overwrite a newer one. */
+  const generation = useRef<Record<string, number>>({});
   const markerGroups = useRef<Record<string, LayerGroup>>({});
   const baseRef = useRef<ReturnType<typeof import("leaflet").tileLayer> | null>(null);
   const labelRef = useRef<ReturnType<typeof import("leaflet").tileLayer> | null>(null);
@@ -281,13 +287,23 @@ export default function RegionMap() {
     []
   );
 
-  /** Draw a layer for the current view, merging every source that has data. */
+  /**
+   * Draw a layer for the current view.
+   *
+   * Each source renders as soon as it answers rather than waiting for the
+   * slowest. That matters: FEMA's national service has been measured at 25s on
+   * the same request where the two county services answer in 1-3s, and waiting
+   * on it left the whole layer showing "loading" long after most of the data
+   * was in hand. A source that misses SOURCE_TIMEOUT_MS is dropped for this
+   * pass rather than holding the layer open.
+   */
   const drawLayer = useCallback(
     async (layer: MapLayer) => {
       const L = LRef.current, map = mapRef.current;
       if (!L || !map) return;
 
       if (layer.minZoom && map.getZoom() < layer.minZoom) {
+        abort.current[layer.id]?.abort();
         setStatus((s) => ({ ...s, [layer.id]: "zoom" }));
         const ex = overlays.current[layer.id];
         if (ex) { map.removeLayer(ex); delete overlays.current[layer.id]; }
@@ -297,56 +313,81 @@ export default function RegionMap() {
       abort.current[layer.id]?.abort();
       const ctrl = new AbortController();
       abort.current[layer.id] = ctrl;
+      // Guards against a slow earlier pass writing state after a newer one.
+      const gen = (generation.current[layer.id] = (generation.current[layer.id] ?? 0) + 1);
+      const stale = () => ctrl.signal.aborted || generation.current[layer.id] !== gen;
 
       const b = map.getBounds().pad(0.15);
       const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
         .map((v) => v.toFixed(5)).join(",");
 
+      const group = L.layerGroup();
+      let total = 0, capped = false, failures = 0, swapped = false;
+
       setStatus((s) => ({ ...s, [layer.id]: "loading" }));
-      const settled = await Promise.allSettled(
-        layer.sources.map((src) => fetchSource(src, bbox, ctrl.signal))
+
+      await Promise.all(
+        layer.sources.map(async (src) => {
+          // Per-source deadline, chained to the layer's controller.
+          const srcCtrl = new AbortController();
+          const onParentAbort = () => srcCtrl.abort();
+          ctrl.signal.addEventListener("abort", onParentAbort);
+          const timer = setTimeout(() => srcCtrl.abort(), SOURCE_TIMEOUT_MS);
+          try {
+            const { features, capped: wasCapped } = await fetchSource(src, bbox, srcCtrl.signal);
+            if (stale() || !features.length) return;
+
+            // Keep the previous render on screen until the first new data
+            // arrives, so toggling or panning does not blank the layer.
+            if (!swapped) {
+              const prev = overlays.current[layer.id];
+              if (prev) map.removeLayer(prev);
+              overlays.current[layer.id] = group;
+              group.addTo(map);
+              swapped = true;
+            }
+            group.addLayer(
+              L.geoJSON({ type: "FeatureCollection", features } as GeoJSON.FeatureCollection, {
+                style: () =>
+                  layer.kind === "line"
+                    ? { color: layer.color, weight: 2.5, opacity: 0.9 }
+                    : { color: layer.color, weight: 1, opacity: 0.85, fillColor: layer.color, fillOpacity: 0.22 },
+                pointToLayer: (_f, latlng) =>
+                  L.circleMarker(latlng, {
+                    radius: 5, color: "#0a1220", weight: 1.5,
+                    fillColor: layer.color, fillOpacity: 0.95,
+                  }),
+                onEachFeature: (f, lyr) => {
+                  if (f.properties) lyr.bindPopup(popupHtml(layer, f.properties));
+                },
+              })
+            );
+            total += features.length;
+            capped = capped || wasCapped;
+            setCounts((c) => ({ ...c, [layer.id]: total }));
+            setTruncated((t) => ({ ...t, [layer.id]: capped }));
+            setStatus((s) => ({ ...s, [layer.id]: "ready" }));
+          } catch (err) {
+            if (!ctrl.signal.aborted) {
+              failures++;
+              console.warn(`[map] ${layer.id}: ${src.agency} unavailable —`, err);
+            }
+          } finally {
+            clearTimeout(timer);
+            ctrl.signal.removeEventListener("abort", onParentAbort);
+          }
+        })
       );
-      if (ctrl.signal.aborted) return;
 
-      const feats = settled.flatMap((r) => (r.status === "fulfilled" ? r.value.features : []));
-      const capped = settled.some((r) => r.status === "fulfilled" && r.value.capped);
-      const failed = settled.filter((r) => r.status === "rejected");
-      if (failed.length === layer.sources.length) {
-        console.error(`[map] ${layer.id}: every source failed`, failed);
+      if (stale()) return;
+      if (failures === layer.sources.length) {
         setStatus((s) => ({ ...s, [layer.id]: "error" }));
-        return;
-      }
-      if (failed.length) console.warn(`[map] ${layer.id}: ${failed.length} source(s) failed`);
-
-      const prev = overlays.current[layer.id];
-      if (prev) map.removeLayer(prev);
-
-      if (!feats.length) {
-        delete overlays.current[layer.id];
-        setStatus((s) => ({ ...s, [layer.id]: "empty" }));
+      } else if (total === 0) {
+        const ex = overlays.current[layer.id];
+        if (ex) { map.removeLayer(ex); delete overlays.current[layer.id]; }
         setCounts((c) => ({ ...c, [layer.id]: 0 }));
-        return;
+        setStatus((s) => ({ ...s, [layer.id]: "empty" }));
       }
-
-      const gl = L.geoJSON({ type: "FeatureCollection", features: feats } as GeoJSON.FeatureCollection, {
-        style: () =>
-          layer.kind === "line"
-            ? { color: layer.color, weight: 2.5, opacity: 0.9 }
-            : { color: layer.color, weight: 1, opacity: 0.85, fillColor: layer.color, fillOpacity: 0.22 },
-        pointToLayer: (_f, latlng) =>
-          L.circleMarker(latlng, {
-            radius: 5, color: "#0a1220", weight: 1.5,
-            fillColor: layer.color, fillOpacity: 0.95,
-          }),
-        onEachFeature: (f, lyr) => {
-          if (f.properties) lyr.bindPopup(popupHtml(layer, f.properties));
-        },
-      }).addTo(map);
-
-      overlays.current[layer.id] = gl;
-      setCounts((c) => ({ ...c, [layer.id]: feats.length }));
-      setTruncated((t) => ({ ...t, [layer.id]: capped }));
-      setStatus((s) => ({ ...s, [layer.id]: "ready" }));
     },
     [fetchSource]
   );

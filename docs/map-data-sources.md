@@ -148,6 +148,26 @@ shows e.g. `4,000+ capped` in gold when that happens. This matters for honesty:
 farmland at the regional view returns the cap, and an unlabelled partial render
 would read as "no farmland beyond here".
 
+## One slow source must not block a layer
+
+Sources render **progressively**: each one is added to the layer's LayerGroup as
+it answers, rather than waiting on `Promise.allSettled`. This is not a
+micro-optimisation. Measured on one flood-zone request from the same viewport:
+
+| Source | Time |
+|---|---|
+| Santa Cruz County | 1.3s |
+| Monterey County | 2.7s |
+| FEMA NFHL | **25.4s** |
+
+Waiting for all three left the layer showing "loading" for 25 seconds with 90% of
+the data already in hand. Each source now also has a `SOURCE_TIMEOUT_MS` (20s)
+deadline, so a stalled service degrades to "missing from this pass" instead of
+holding the layer open. A `generation` counter per layer stops a slow earlier
+pass from writing state after a newer one has superseded it, and the previous
+render stays on screen until the first new features arrive, so panning never
+blanks a layer.
+
 ## Debugging
 
 In development only, the Leaflet map is exposed as `window.__map`, since it is
