@@ -13,6 +13,10 @@ Deploy with `npm run deploy:pages` (builds with `GITHUB_PAGES=true`, pushes `out
   at `deploy/github-pages-workflow.yml`. Fix with `gh auth refresh -s workflow`.
 - Flipping Pages `build_type` from `workflow` to `legacy` does **not** trigger a build for an
   already-pushed branch — `POST /repos/{o}/{r}/pages/builds` is needed to kick the first one.
+- **Pages can be switched off without touching the content.** Seen once (Oct 2026): every URL 404'd
+  while the `gh-pages` branch was fully intact — `has_pages` had simply gone `false`. Recovery is to
+  re-enable, not to rebuild: `gh api -X POST repos/MikeTanzer/MatthewTanzer/pages -f build_type=legacy
+  -f 'source[branch]=gh-pages' -f 'source[path]=/'`. Check `has_pages` before assuming a deploy broke.
 
 Static export means no API routes: the contact form composes a `mailto:` instead, and
 `NEXT_PUBLIC_FORM_ENDPOINT` switches it back to a JSON POST (Formspree, or a restored
